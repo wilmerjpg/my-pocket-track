@@ -17,10 +17,9 @@ export async function askClaude(userMessage: string, sheetData: string[][]) {
       category: row[1],
       type: row[2],
       paymentMethod: row[3],
-      currency: row[4],
-      description: row[5],
-      amount: row[6],
-      date: row[8],
+      description: row[4],
+      amount: row[5],
+      date: row[7],
     }))
 
   const response = await client.messages.create({
@@ -41,7 +40,7 @@ Instrucciones:
 - Si preguntan por totales, suma los montos correctamente
 - Si preguntan por categorías específicas (comida, inversiones, servicios, etc.), filtra y suma
 - Si preguntan por una persona específica (Lisbeth, Nosotros, etc.), filtra por owner
-- Distingue entre Currency VES y US/USD cuando des totales
+- Todos los montos son en USD
 - Usa emojis para hacer la respuesta más amigable
 - Sé breve, máximo 3-4 líneas de respuesta`,
       },
