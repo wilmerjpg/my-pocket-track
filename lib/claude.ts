@@ -19,7 +19,7 @@ export async function askClaude(userMessage: string, sheetData: string[][]) {
       paymentMethod: row[3],
       description: row[4],
       amount: row[5],
-      date: row[7],
+      day: row[6],
     }))
 
   const response = await client.messages.create({

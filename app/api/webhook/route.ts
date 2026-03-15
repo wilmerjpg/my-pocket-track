@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMonthData } from '@/lib/sheets'
+import { getMonthData, getExpectedData } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { askClaude } from '@/lib/claude'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -37,8 +32,13 @@ export async function POST(req: NextRequest) {
     const from: string = message.from
     const text: string = message.text.body
 
-    const currentMonth = MONTH_NAMES[new Date().getMonth()]
-    const sheetData = await getMonthData(currentMonth)
+    const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'debo pagar', 'toca pagar']
+    const isExpectedQuery = expectedKeywords.some(k => text.toLowerCase().includes(k))
+
+    const sheetData = isExpectedQuery
+      ? await getExpectedData()
+      : await getMonthData(new Date().toLocaleString('en-US', { month: 'long' }))
+
     const reply = await askClaude(text, sheetData)
 
     await sendMessage(from, reply)
