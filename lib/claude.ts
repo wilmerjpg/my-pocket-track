@@ -63,6 +63,51 @@ Instrucciones:
   return response.content[0].type === "text" ? response.content[0].text : "";
 }
 
+export type ParsedExpense = {
+  owner: string
+  category: string
+  type: string
+  paymentMethod: string
+  description: string
+  amount: string
+}
+
+export async function parseExpenseMessage(userMessage: string): Promise<ParsedExpense | null> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "user",
+        content: `Extract expense details from this message: "${userMessage}"
+
+Valid owners: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida
+Valid categories: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro
+Valid payment methods: Card, BofA Yanelly, BofA Wilmer, Cash, Payoneer, Paypal, Banesco Panama, TDC Mercantil W
+Type is always "Extra" for ad-hoc expenses.
+
+Rules:
+- Match owner case-insensitively to one of the valid owners (e.g. "tete" → "Tete")
+- Match category case-insensitively (e.g. "salud" → "Salud")
+- If payment method not mentioned, default to "Cash"
+- Amount must be a number (no currency symbol)
+- Description: short phrase describing the expense
+- If owner or amount is missing/unclear, return {"matched": false}
+
+Return JSON only:
+{"matched":true,"owner":"...","category":"...","type":"Extra","paymentMethod":"...","description":"...","amount":"..."}
+or {"matched":false}`,
+      },
+    ],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text : ""
+  const parsed = extractJson(text) as ({ matched: true } & ParsedExpense) | { matched: false } | null
+  if (!parsed || !parsed.matched) return null
+  const { matched: _, ...expense } = parsed
+  return expense as ParsedExpense
+}
+
 type ConfirmationResult =
   | { matched: "items"; items: { description: string; owner: string }[] }
   | { matched: "all" }

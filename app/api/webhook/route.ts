@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getMonthData, getExpectedData, appendExpense } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
-import { askClaude, parsePaymentConfirmation } from '@/lib/claude'
+import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
 
@@ -12,6 +12,7 @@ const MONTH_NAMES = [
 
 const confirmationKeywords = ['pagué', 'pague', 'ya pagué', 'ya pague', 'paid', 'i paid', 'cancelé', 'cancele', 'confirmo']
 const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'debo pagar', 'toca pagar']
+const registerKeywords = ['registra', 'registro', 'anota', 'agrega', 'añade', 'añadir', 'agregar', 'register', 'add expense', 'log expense', 'gasto de', 'gastos de']
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -42,6 +43,35 @@ export async function POST(req: NextRequest) {
     const lowerText = text.toLowerCase()
     const currentMonth = MONTH_NAMES[new Date().getMonth()]
     const today = new Date().getDate()
+
+    // Branch 0 — Register new ad-hoc expense
+    if (registerKeywords.some(k => lowerText.includes(k))) {
+      const expense = await parseExpenseMessage(text)
+      if (!expense) {
+        await sendMessage(from, '❌ No pude entender el gasto. Asegúrate de incluir el owner y el monto.\n\nEjemplo: _Registra $50 de comida para Tete, pizza_')
+      } else {
+        await appendExpense(currentMonth, [
+          expense.owner,
+          expense.category,
+          expense.type,
+          expense.paymentMethod,
+          expense.description,
+          expense.amount,
+          String(today),
+        ])
+        await sendMessage(from,
+          `✅ *Gasto registrado correctamente:*\n\n` +
+          `• *Owner:* ${expense.owner}\n` +
+          `• *Categoría:* ${expense.category}\n` +
+          `• *Descripción:* ${expense.description}\n` +
+          `• *Monto:* $${expense.amount}\n` +
+          `• *Tipo:* ${expense.type}\n` +
+          `• *Método de pago:* ${expense.paymentMethod}\n` +
+          `• *Fecha:* ${today}/${new Date().getMonth() + 1}/${new Date().getFullYear()}`
+        )
+      }
+      return NextResponse.json({ status: 'ok' })
+    }
 
     // Branch 1 — Payment confirmation
     if (confirmationKeywords.some(k => lowerText.includes(k))) {
