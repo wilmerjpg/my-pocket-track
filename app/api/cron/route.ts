@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const today = now.getDate()
+  const todayDate = `${today}/${now.getMonth() + 1}/${now.getFullYear()}`
   const tomorrow = today + 1
   const currentMonth = MONTH_NAMES[now.getMonth()]
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
           row[3], // By Method
           row[4], // Description
           row[5], // Amount
-          String(today), // Date (day of month)
+          todayDate, // Date (day/month/year)
         ])
       )
     )
