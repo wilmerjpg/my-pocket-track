@@ -29,9 +29,22 @@ export async function getExpectedData(month: string) {
 
 export async function appendExpense(month: string, row: string[]) {
   const sheets = getSheets()
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-    range: `${month}!A:G`,
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID!
+
+  // Read column A to find the first empty row (before summary rows)
+  const colA = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${month}!A:A`,
+  })
+  const values = colA.data.values || []
+
+  // Find first empty row after header (findIndex returns 0-based, sheet rows are 1-based)
+  const emptyIndex = values.findIndex((cell, i) => i > 0 && (!cell || !cell[0]))
+  const targetRow = emptyIndex >= 0 ? emptyIndex + 1 : values.length + 1
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${month}!A${targetRow}:G${targetRow}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [row] },
   })
