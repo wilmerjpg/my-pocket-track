@@ -35,9 +35,10 @@ export async function POST(req: NextRequest) {
     const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'debo pagar', 'toca pagar']
     const isExpectedQuery = expectedKeywords.some(k => text.toLowerCase().includes(k))
 
+    const currentMonth = new Date().toLocaleString('en-US', { month: 'long' })
     const sheetData = isExpectedQuery
-      ? await getExpectedData()
-      : await getMonthData(new Date().toLocaleString('en-US', { month: 'long' }))
+      ? await getExpectedData(currentMonth)
+      : await getMonthData(currentMonth)
 
     const reply = await askClaude(text, sheetData)
 

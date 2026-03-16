@@ -18,11 +18,11 @@ export async function getMonthData(month: string) {
   return res.data.values || []
 }
 
-export async function getExpectedData() {
+export async function getExpectedData(month: string) {
   const sheets = getSheets()
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.GOOGLE_EXPECTED_SHEET_ID!,
-    range: `Expected!A:H`,
+    range: `${month}!A:H`,
   })
   return res.data.values || []
 }

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const tomorrow = today + 1
   const currentMonth = MONTH_NAMES[now.getMonth()]
 
-  const rows = await getExpectedData()
+  const rows = await getExpectedData(currentMonth)
 
   // Skip header row, filter by day (col H = index 7)
   const allBills = rows.slice(1).filter(row => row[0])
