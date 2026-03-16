@@ -27,10 +27,14 @@ export async function GET(req: NextRequest) {
   const todayBills = allBills.filter(row => Number(row[7]) === today)
   const tomorrowBills = allBills.filter(row => Number(row[7]) === tomorrow)
 
-  // Auto-log today's bills into the current month expenses sheet
-  if (todayBills.length > 0) {
+  // Split today's bills into auto and manual
+  const autoBills = todayBills.filter(row => row[6]?.toLowerCase() === 'yes')
+  const manualBills = todayBills.filter(row => row[6]?.toLowerCase() !== 'yes')
+
+  // Auto-log only automatic bills into the current month expenses sheet
+  if (autoBills.length > 0) {
     await Promise.all(
-      todayBills.map(row =>
+      autoBills.map(row =>
         appendExpense(currentMonth, [
           row[0], // Owner
           row[1], // Category
@@ -50,20 +54,27 @@ export async function GET(req: NextRequest) {
 
   let message = '💰 *My Pocket Track — Recordatorio de pagos*\n\n'
 
-  if (todayBills.length > 0) {
-    message += '📅 *Hoy toca pagar:*\n'
-    todayBills.forEach(row => {
-      const auto = row[6]?.toLowerCase() === 'yes' ? ' 🤖' : ''
-      message += `• ${row[4]}: $${row[5]} (${row[3]})${auto}\n`
+  if (autoBills.length > 0) {
+    message += '🤖 *Registrado automáticamente:*\n'
+    autoBills.forEach(row => {
+      message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})\n`
     })
     message += '\n'
+  }
+
+  if (manualBills.length > 0) {
+    message += '⏳ *Pendiente de confirmación:*\n'
+    manualBills.forEach(row => {
+      message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})\n`
+    })
+    message += '\nResponde *"Pagué [nombre]"* para registrar cada pago.\n\n'
   }
 
   if (tomorrowBills.length > 0) {
     message += '⏰ *Mañana toca pagar:*\n'
     tomorrowBills.forEach(row => {
       const auto = row[6]?.toLowerCase() === 'yes' ? ' 🤖' : ''
-      message += `• ${row[4]}: $${row[5]} (${row[3]})${auto}\n`
+      message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})${auto}\n`
     })
   }
 

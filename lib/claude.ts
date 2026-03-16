@@ -62,3 +62,65 @@ Instrucciones:
 
   return response.content[0].type === "text" ? response.content[0].text : "";
 }
+
+type ConfirmationResult =
+  | { matched: "items"; items: { description: string; owner: string }[] }
+  | { matched: "all" }
+  | { matched: "ambiguous"; options: { description: string; owner: string; amount: string }[] }
+  | { matched: false }
+
+function extractJson(text: string): unknown {
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) return null
+  try {
+    return JSON.parse(match[0])
+  } catch {
+    return null
+  }
+}
+
+export async function parsePaymentConfirmation(
+  userMessage: string,
+  pendingBills: string[][]
+): Promise<ConfirmationResult> {
+  const bills = pendingBills
+    .slice(1)
+    .filter((row) => row[0] && row[1])
+    .map((row) => ({
+      description: row[4],
+      owner: row[0],
+      amount: row[5],
+    }))
+
+  if (bills.length === 0) return { matched: false }
+
+  const billList = bills
+    .map((b, i) => `${i + 1}. "${b.description}" — ${b.owner} ($${b.amount})`)
+    .join("\n")
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "user",
+        content: `The user confirmed a payment with this message: "${userMessage}"
+
+Pending bills:
+${billList}
+
+Match the user's message to bills above. Rules:
+- If the user wants to pay ALL pending bills (e.g. "paid everything", "pagué todo", "all payments") → return: {"matched":"all"}
+- If the user mentions one or more specific bills that all match unambiguously → return: {"matched":"items","items":[{"description":"...","owner":"..."},{"description":"...","owner":"..."}]}
+- If a description matches multiple owners and the user didn't specify which → return: {"matched":"ambiguous","options":[{"description":"...","owner":"...","amount":"..."},...]}
+- If no match or unclear → return: {"matched":false}
+
+Respond with JSON only, no other text.`,
+      },
+    ],
+  })
+
+  const text = response.content[0].type === "text" ? response.content[0].text : ""
+  const parsed = extractJson(text) as ConfirmationResult | null
+  return parsed ?? { matched: false }
+}
