@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const today = now.getDate()
-  const todayDate = `${today}/${now.getMonth() + 1}/${now.getFullYear()}`
+  const todayDate = `${now.getFullYear()}/${now.getMonth() + 1}/${today}`
   const tomorrow = today + 1
   const currentMonth = MONTH_NAMES[now.getMonth()]
 

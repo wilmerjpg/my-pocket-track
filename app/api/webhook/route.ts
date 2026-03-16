@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const now = new Date()
     const currentMonth = MONTH_NAMES[now.getMonth()]
     const today = now.getDate()
-    const todayDate = `${today}/${now.getMonth() + 1}/${now.getFullYear()}`
+    const todayDate = `${now.getFullYear()}/${now.getMonth() + 1}/${today}`
 
     // Branch 0 — Register new ad-hoc expense
     if (registerKeywords.some(k => lowerText.includes(k))) {
