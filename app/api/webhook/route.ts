@@ -10,6 +10,18 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (attempt === retries) throw err
+      await new Promise(res => setTimeout(res, delayMs * attempt))
+    }
+  }
+  throw new Error('unreachable')
+}
+
 const confirmationKeywords = ['pagué', 'pague', 'ya pagué', 'ya pague', 'paid', 'i paid', 'cancelé', 'cancele', 'confirmo']
 const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'debo pagar', 'toca pagar']
 const registerKeywords = ['registra', 'registro', 'anota', 'agrega', 'añade', 'añadir', 'agregar', 'register', 'add expense', 'log expense', 'gasto de', 'gastos de']
@@ -50,25 +62,29 @@ export async function POST(req: NextRequest) {
       if (!expense) {
         await sendMessage(from, '❌ No pude entender el gasto. Asegúrate de incluir el owner y el monto.\n\nEjemplo: _Registra $50 de comida para Tete, pizza_')
       } else {
-        await appendExpense(currentMonth, [
-          expense.owner,
-          expense.category,
-          expense.type,
-          expense.paymentMethod,
-          expense.description,
-          expense.amount,
-          String(today),
-        ])
-        await sendMessage(from,
-          `✅ *Gasto registrado correctamente:*\n\n` +
-          `• *Owner:* ${expense.owner}\n` +
-          `• *Categoría:* ${expense.category}\n` +
-          `• *Descripción:* ${expense.description}\n` +
-          `• *Monto:* $${expense.amount}\n` +
-          `• *Tipo:* ${expense.type}\n` +
-          `• *Método de pago:* ${expense.paymentMethod}\n` +
-          `• *Fecha:* ${today}/${new Date().getMonth() + 1}/${new Date().getFullYear()}`
-        )
+        try {
+          await withRetry(() => appendExpense(currentMonth, [
+            expense.owner,
+            expense.category,
+            expense.type,
+            expense.paymentMethod,
+            expense.description,
+            expense.amount,
+            String(today),
+          ]))
+          await sendMessage(from,
+            `✅ *Gasto registrado correctamente:*\n\n` +
+            `• *Owner:* ${expense.owner}\n` +
+            `• *Categoría:* ${expense.category}\n` +
+            `• *Descripción:* ${expense.description}\n` +
+            `• *Monto:* $${expense.amount}\n` +
+            `• *Tipo:* ${expense.type}\n` +
+            `• *Método de pago:* ${expense.paymentMethod}\n` +
+            `• *Fecha:* ${today}/${new Date().getMonth() + 1}/${new Date().getFullYear()}`
+          )
+        } catch {
+          await sendMessage(from, '❌ *Error al registrar el gasto.* No se pudo guardar en Google Sheets después de 3 intentos. Intenta de nuevo en unos minutos.')
+        }
       }
       return NextResponse.json({ status: 'ok' })
     }
