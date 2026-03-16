@@ -22,10 +22,10 @@ export async function GET(req: NextRequest) {
 
   const rows = await getExpectedData()
 
-  // Skip header row, filter by day (col G = index 6)
+  // Skip header row, filter by day (col H = index 7)
   const allBills = rows.slice(1).filter(row => row[0])
-  const todayBills = allBills.filter(row => Number(row[6]) === today)
-  const tomorrowBills = allBills.filter(row => Number(row[6]) === tomorrow)
+  const todayBills = allBills.filter(row => Number(row[7]) === today)
+  const tomorrowBills = allBills.filter(row => Number(row[7]) === tomorrow)
 
   // Auto-log today's bills into the current month expenses sheet
   if (todayBills.length > 0) {
@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
   if (todayBills.length > 0) {
     message += '📅 *Hoy toca pagar:*\n'
     todayBills.forEach(row => {
-      message += `• ${row[4]}: $${row[5]} (${row[3]})\n`
+      const auto = row[6]?.toLowerCase() === 'yes' ? ' 🤖' : ''
+      message += `• ${row[4]}: $${row[5]} (${row[3]})${auto}\n`
     })
     message += '\n'
   }
@@ -61,7 +62,8 @@ export async function GET(req: NextRequest) {
   if (tomorrowBills.length > 0) {
     message += '⏰ *Mañana toca pagar:*\n'
     tomorrowBills.forEach(row => {
-      message += `• ${row[4]}: $${row[5]} (${row[3]})\n`
+      const auto = row[6]?.toLowerCase() === 'yes' ? ' 🤖' : ''
+      message += `• ${row[4]}: $${row[5]} (${row[3]})${auto}\n`
     })
   }
 

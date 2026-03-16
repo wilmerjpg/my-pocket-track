@@ -22,7 +22,7 @@ export async function getExpectedData() {
   const sheets = getSheets()
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.GOOGLE_EXPECTED_SHEET_ID!,
-    range: `Expected!A:G`,
+    range: `Expected!A:H`,
   })
   return res.data.values || []
 }

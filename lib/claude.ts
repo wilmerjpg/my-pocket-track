@@ -27,7 +27,8 @@ export async function askClaude(userMessage: string, sheetData: string[][]) {
       paymentMethod: row[3],
       description: row[4],
       amount: row[5],
-      day: row[6],
+      auto: row[6],
+      day: row[7],
     }));
 
   const now = new Date();
