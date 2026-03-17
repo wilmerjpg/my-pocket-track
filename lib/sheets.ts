@@ -27,9 +27,53 @@ export async function getExpectedData(month: string) {
   return res.data.values || []
 }
 
+async function ensureMonthSheet(month: string) {
+  const sheets = getSheets()
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID!
+
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
+  const sheetList = spreadsheet.data.sheets || []
+
+  const exists = sheetList.some(s => s.properties?.title === month)
+  if (exists) return
+
+  const templateSheet = sheetList.find(s => s.properties?.title === 'Template')
+  if (!templateSheet?.properties?.sheetId) throw new Error('Template sheet not found')
+
+  const duplicateRes = await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        duplicateSheet: {
+          sourceSheetId: templateSheet.properties.sheetId,
+          newSheetName: month,
+        },
+      }],
+    },
+  })
+
+  // Move the new sheet to the end (after the last sheet)
+  const newSheetId = duplicateRes.data.replies?.[0]?.duplicateSheet?.properties?.sheetId
+  if (newSheetId !== undefined) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          updateSheetProperties: {
+            properties: { sheetId: newSheetId, index: sheetList.length },
+            fields: 'index',
+          },
+        }],
+      },
+    })
+  }
+}
+
 export async function appendExpense(month: string, row: string[]) {
   const sheets = getSheets()
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!
+
+  await ensureMonthSheet(month)
 
   // Read column A to find the first empty row (before summary rows)
   const colA = await sheets.spreadsheets.values.get({
