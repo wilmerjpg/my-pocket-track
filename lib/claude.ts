@@ -44,7 +44,7 @@ Contexto del sistema:
 - Owners válidos: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida
 - "Nosotros" significa gastos compartidos (Wilmer + Yanelly)
 - "Wilmer Padre" y "Wilmer padre" son el mismo owner (ignora mayúsculas al filtrar)
-- Categorías: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro
+- Categorías: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro, Hogar
 - Métodos de pago: Card, BofA Yanelly, BofA Wilmer, Cash, Payoneer, Paypal, Banesco Panama, TDC Mercantil W
 
 Instrucciones:
@@ -82,9 +82,8 @@ export async function parseExpenseMessage(userMessage: string): Promise<ParsedEx
         content: `Extract expense details from this message: "${userMessage}"
 
 Valid owners: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida
-Valid categories: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro
+Valid categories: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro, Hogar
 Valid payment methods: Card, BofA Yanelly, BofA Wilmer, Cash, Payoneer, Paypal, Banesco Panama, TDC Mercantil W
-Type is always "Extra" for ad-hoc expenses.
 
 Rules:
 - Match owner case-insensitively to one of the valid owners (e.g. "tete" → "Tete")
@@ -93,9 +92,10 @@ Rules:
 - Amount must be a number (no currency symbol)
 - Description: short phrase describing the expense
 - If owner or amount is missing/unclear, return {"matched": false}
+- Type: if category is "Comida" → "Fijo", otherwise → "Extra"
 
 Return JSON only:
-{"matched":true,"owner":"...","category":"...","type":"Extra","paymentMethod":"...","description":"...","amount":"..."}
+{"matched":true,"owner":"...","category":"...","type":"...","paymentMethod":"...","description":"...","amount":"..."}
 or {"matched":false}`,
       },
     ],
