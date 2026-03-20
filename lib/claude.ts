@@ -88,11 +88,12 @@ Valid payment methods: Card, BofA Yanelly, BofA Wilmer, Cash, Payoneer, Paypal, 
 Rules:
 - Match owner case-insensitively to one of the valid owners (e.g. "tete" → "Tete")
 - Match category case-insensitively (e.g. "salud" → "Salud")
+- If the message contains the word "personal" (e.g. "gasto personal", "personal expense"), category MUST be "Personal" regardless of what the expense is about
 - If payment method not mentioned, default to "Cash"
 - Amount must be a number (no currency symbol)
-- Description: short phrase describing the expense
+- Description: short phrase describing the actual expense item, do NOT include category-indicator words like "personal", "gasto personal", etc. (e.g. "gasto personal en panadería" → description is "panadería")
 - If owner or amount is missing/unclear, return {"matched": false}
-- Type: if category is "Comida" → "Fijo", otherwise → "Extra"
+- Type: if category is "Comida" → "Fijo", if category is "Personal" → "Extra", otherwise → "Extra"
 
 Return JSON only:
 {"matched":true,"owner":"...","category":"...","type":"...","paymentMethod":"...","description":"...","amount":"..."}
