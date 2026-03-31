@@ -2,24 +2,26 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-export async function askClaude(userMessage: string, sheetData: string[][]) {
-  const dataRows = sheetData
-    .slice(1)
-    .filter((row) => {
-      // Summary rows have no category (col B is empty)
-      if (!row[0] || !row[1]) return false;
-      return true;
-    })
-    .map((row) => ({
-      owner: row[0],
-      category: row[1],
-      type: row[2],
-      paymentMethod: row[3],
-      description: row[4],
-      amount: row[5],
-      auto: row[6],
-      day: row[7],
-    }));
+export async function askClaude(
+  userMessage: string,
+  monthsData: { month: string; data: string[][] }[]
+) {
+  const allRows = monthsData.flatMap(({ month, data }) =>
+    data
+      .slice(1)
+      .filter((row) => row[0] && row[1])
+      .map((row) => ({
+        month,
+        owner: row[0],
+        category: row[1],
+        type: row[2],
+        paymentMethod: row[3],
+        description: row[4],
+        amount: row[5],
+        auto: row[6],
+        day: row[7],
+      }))
+  );
 
   const now = new Date();
   const todayDay = now.getDate();
@@ -34,9 +36,9 @@ export async function askClaude(userMessage: string, sheetData: string[][]) {
         content: `Eres un asistente financiero personal llamado My Pocket Track.
 Hoy es el día ${todayDay} de ${currentMonth}.
 
-Aquí están los datos:
+Aquí están los datos de pagos esperados (el campo "month" indica a qué mes pertenece cada fila):
 
-${JSON.stringify(dataRows, null, 2)}
+${JSON.stringify(allRows, null, 2)}
 
 El usuario pregunta: "${userMessage}"
 
@@ -52,7 +54,8 @@ Instrucciones:
 - Si preguntan por totales, suma los montos correctamente
 - Si preguntan por categorías específicas, filtra y suma
 - Si preguntan por una persona, filtra por owner ignorando mayúsculas/minúsculas
-- Si preguntan por pagos próximos o pendientes, muestra SOLO los que tienen day > ${todayDay} en el mes actual (${currentMonth}), ordénalos por día ascendente. NO menciones el próximo mes a menos que el usuario lo pida explícitamente
+- Si preguntan por pagos próximos o pendientes del mes actual, muestra los que tienen day > ${todayDay} y month = "${currentMonth}", ordénalos por día ascendente
+- Si preguntan por un día o fecha específica (ej: "el 2 de abril"), filtra por el month y day correctos según lo pedido
 - Todos los montos son en USD
 - Usa emojis para hacer la respuesta más amigable
 - Sé breve, máximo 3-4 líneas de respuesta`,

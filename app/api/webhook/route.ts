@@ -26,6 +26,31 @@ const confirmationKeywords = ['pagué', 'pague', 'ya pagué', 'ya pague', 'paid'
 const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'pendiente', 'debo pagar', 'toca pagar', 'queda del mes', 'resto del mes', 'falta pagar', 'por pagar']
 const registerKeywords = ['registra', 'registro', 'anota', 'agrega', 'añade', 'añadir', 'agregar', 'register', 'add expense', 'log expense', 'gasto de', 'gastos de']
 
+// Maps Spanish and English month keywords to canonical English month names
+const MONTH_KEYWORD_MAP: Record<string, string> = {
+  'enero': 'January',    'january': 'January',
+  'febrero': 'February', 'february': 'February',
+  'marzo': 'March',      'march': 'March',
+  'abril': 'April',      'april': 'April',
+  'mayo': 'May',         // 'may' skipped in English — too ambiguous
+  'junio': 'June',       'june': 'June',
+  'julio': 'July',       'july': 'July',
+  'agosto': 'August',    'august': 'August',
+  'septiembre': 'September', 'september': 'September',
+  'octubre': 'October',  'october': 'October',
+  'noviembre': 'November', 'november': 'November',
+  'diciembre': 'December', 'december': 'December',
+}
+
+function detectMonths(text: string, currentMonth: string): string[] {
+  const lower = text.toLowerCase()
+  const found = new Set<string>([currentMonth])
+  for (const [keyword, monthName] of Object.entries(MONTH_KEYWORD_MAP)) {
+    if (lower.includes(keyword)) found.add(monthName)
+  }
+  return Array.from(found)
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const mode = searchParams.get('hub.mode')
@@ -145,15 +170,18 @@ export async function POST(req: NextRequest) {
 
     // Branch 2 — Expected payments query
     if (expectedKeywords.some(k => lowerText.includes(k))) {
-      const sheetData = await getExpectedData(currentMonth)
-      const reply = await askClaude(text, sheetData)
+      const months = detectMonths(lowerText, currentMonth)
+      const monthsData = await Promise.all(
+        months.map(async month => ({ month, data: await getExpectedData(month) }))
+      )
+      const reply = await askClaude(text, monthsData)
       await sendMessage(from, reply)
       return NextResponse.json({ status: 'ok' })
     }
 
     // Branch 3 — General expenses query (fallback)
     const sheetData = await getMonthData(currentMonth)
-    const reply = await askClaude(text, sheetData)
+    const reply = await askClaude(text, [{ month: currentMonth, data: sheetData }])
     await sendMessage(from, reply)
 
     return NextResponse.json({ status: 'ok' })

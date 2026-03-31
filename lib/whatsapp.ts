@@ -2,7 +2,7 @@ import axios from 'axios'
 
 export async function sendMessage(to: string, message: string) {
   try {
-    await axios.post(
+    const response = await axios.post(
       `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
@@ -17,9 +17,10 @@ export async function sendMessage(to: string, message: string) {
         },
       }
     )
+    console.log('[whatsapp] API response:', JSON.stringify(response.data, null, 2))
   } catch (error: unknown) {
     if (axios.isAxiosError(error)) {
-      console.error('WhatsApp API error:', JSON.stringify(error.response?.data, null, 2))
+      console.error('[whatsapp] API error:', JSON.stringify(error.response?.data, null, 2))
     }
     throw error
   }
