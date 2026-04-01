@@ -69,7 +69,9 @@ async function ensureMonthSheet(month: string) {
   }
 }
 
-export async function appendExpense(month: string, row: string[]) {
+export async function appendExpenses(month: string, rows: string[][]) {
+  if (rows.length === 0) return
+
   const sheets = getSheets()
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!
 
@@ -88,8 +90,12 @@ export async function appendExpense(month: string, row: string[]) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${month}!A${targetRow}:G${targetRow}`,
+    range: `${month}!A${targetRow}:G${targetRow + rows.length - 1}`,
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
+    requestBody: { values: rows },
   })
+}
+
+export async function appendExpense(month: string, row: string[]) {
+  return appendExpenses(month, [row])
 }
