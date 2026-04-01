@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMonthData, getExpectedData, appendExpense } from '@/lib/sheets'
+import { getMonthData, getExpectedData, appendExpense, appendExpenses } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
 
@@ -131,8 +131,8 @@ export async function POST(req: NextRequest) {
         if (todayManual.length === 0) {
           await sendMessage(from, 'No tienes pagos manuales pendientes para hoy.')
         } else {
-          await Promise.all(todayManual.map(row =>
-            appendExpense(currentMonth, [row[0], row[1], row[2], row[3], row[4], row[5], todayDate])
+          await appendExpenses(currentMonth, todayManual.map(row =>
+            [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
           ))
           const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: $${r[5]}`).join('\n')
           await sendMessage(from, `✅ *${todayManual.length} pagos registrados!*\n${list}`)
@@ -146,8 +146,8 @@ export async function POST(req: NextRequest) {
           )
         ).filter(Boolean) as string[][]
 
-        await Promise.all(loggedRows.map(row =>
-          appendExpense(currentMonth, [row[0], row[1], row[2], row[3], row[4], row[5], todayDate])
+        await appendExpenses(currentMonth, loggedRows.map(row =>
+          [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
         ))
         const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: $${r[5]}`).join('\n')
         await sendMessage(from, `✅ *${loggedRows.length} pago(s) registrado(s)!*\n${list}`)

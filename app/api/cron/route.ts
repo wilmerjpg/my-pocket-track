@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getExpectedData, appendExpense } from '@/lib/sheets'
+import { getExpectedData, appendExpenses } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 
 const MY_WHATSAPP_NUMBER = process.env.MY_WHATSAPP_NUMBER!
@@ -49,19 +49,15 @@ export async function GET(req: NextRequest) {
     // Auto-log only automatic bills into the current month expenses sheet
     if (autoBills.length > 0) {
       console.log(`[cron] Auto-logging ${autoBills.length} bills to "${currentMonth}" expense sheet`)
-      await Promise.all(
-        autoBills.map(row =>
-          appendExpense(currentMonth, [
-            row[0], // Owner
-            row[1], // Category
-            row[2], // Type
-            row[3], // By Method
-            row[4], // Description
-            row[5], // Amount
-            todayDate, // Date (year/month/day)
-          ])
-        )
-      )
+      await appendExpenses(currentMonth, autoBills.map(row => [
+        row[0], // Owner
+        row[1], // Category
+        row[2], // Type
+        row[3], // By Method
+        row[4], // Description
+        row[5], // Amount
+        todayDate, // Date (year/month/day)
+      ]))
       console.log(`[cron] Auto-log complete`)
     }
 
