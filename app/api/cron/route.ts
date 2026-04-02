@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getExpectedData, appendExpenses } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
+import { getNow } from '@/lib/date'
 
 const MY_WHATSAPP_NUMBER = process.env.MY_WHATSAPP_NUMBER!
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -16,11 +12,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const now = new Date()
-    const today = now.getDate()
-    const todayDate = `${now.getFullYear()}/${now.getMonth() + 1}/${today}`
+    const { year, month, day: today, monthName: currentMonth } = getNow()
+    const todayDate = `${year}/${month}/${today}`
     const tomorrow = today + 1
-    const currentMonth = MONTH_NAMES[now.getMonth()]
 
     console.log(`[cron] Running for ${currentMonth} ${today}, date=${todayDate}`)
 

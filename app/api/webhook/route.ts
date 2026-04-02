@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getMonthData, getExpectedData, appendExpense, appendExpenses } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
+import { getNow } from '@/lib/date'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -78,10 +74,8 @@ export async function POST(req: NextRequest) {
     const from: string = message.from
     const text: string = message.text.body
     const lowerText = text.toLowerCase()
-    const now = new Date()
-    const currentMonth = MONTH_NAMES[now.getMonth()]
-    const today = now.getDate()
-    const todayDate = `${now.getFullYear()}/${now.getMonth() + 1}/${today}`
+    const { year, month, day: today, monthName: currentMonth } = getNow()
+    const todayDate = `${year}/${month}/${today}`
 
     // Branch 0 — Register new ad-hoc expense
     if (registerKeywords.some(k => lowerText.includes(k))) {
@@ -107,7 +101,7 @@ export async function POST(req: NextRequest) {
             `• *Monto:* $${expense.amount}\n` +
             `• *Tipo:* ${expense.type}\n` +
             `• *Método de pago:* ${expense.paymentMethod}\n` +
-            `• *Fecha:* ${today}/${new Date().getMonth() + 1}/${new Date().getFullYear()}`
+            `• *Fecha:* ${today}/${month}/${year}`
           )
         } catch {
           await sendMessage(from, '❌ *Error al registrar el gasto.* No se pudo guardar en Google Sheets después de 3 intentos. Intenta de nuevo en unos minutos.')
