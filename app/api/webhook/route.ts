@@ -19,7 +19,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): 
 }
 
 const confirmationKeywords = ['pagué', 'pague', 'ya pagué', 'ya pague', 'paid', 'i paid', 'cancelé', 'cancele', 'confirmo']
-const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'pendiente', 'debo pagar', 'toca pagar', 'queda del mes', 'resto del mes', 'falta pagar', 'por pagar']
+const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'pendiente', 'debo pagar', 'toca pagar', 'se paga', 'hay que pagar', 'queda del mes', 'resto del mes', 'falta pagar', 'falta por pagar', 'por pagar', 'mañana', 'tomorrow']
 const registerKeywords = ['registra', 'registro', 'anota', 'agrega', 'añade', 'añadir', 'agregar', 'register', 'add expense', 'log expense', 'gasto de', 'gastos de']
 
 // Maps Spanish and English month keywords to canonical English month names
