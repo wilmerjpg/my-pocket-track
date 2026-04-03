@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getExpectedData, appendExpenses } from '@/lib/sheets'
+import { getExpectedData, getMonthData, appendExpenses } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { getNow } from '@/lib/date'
 
 const MY_WHATSAPP_NUMBER = process.env.MY_WHATSAPP_NUMBER!
+
+function isAlreadyLogged(bill: string[], expenseRows: string[][], todayDate: string): boolean {
+  return expenseRows.some(expense =>
+    expense[0]?.toLowerCase() === bill[0]?.toLowerCase() &&
+    expense[4]?.toLowerCase() === bill[4]?.toLowerCase() &&
+    expense[6] === todayDate
+  )
+}
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -18,8 +26,12 @@ export async function GET(req: NextRequest) {
 
     console.log(`[cron] Running for ${currentMonth} ${today}, date=${todayDate}`)
 
-    const rows = await getExpectedData(currentMonth)
-    console.log(`[cron] Fetched ${rows?.length ?? 0} rows from "${currentMonth}" sheet`)
+    const [rows, expenseRows] = await Promise.all([
+      getExpectedData(currentMonth),
+      getMonthData(currentMonth),
+    ])
+    console.log(`[cron] Fetched ${rows?.length ?? 0} expected rows, ${expenseRows?.length ?? 0} expense rows from "${currentMonth}"`)
+
 
     if (!rows || rows.length <= 1) {
       console.error(`[cron] No data found for month: ${currentMonth}`)
@@ -36,9 +48,11 @@ export async function GET(req: NextRequest) {
 
     // Split today's bills into auto and manual
     const autoBills = todayBills.filter(row => row[6]?.toLowerCase() === 'yes')
-    const manualBills = todayBills.filter(row => row[6]?.toLowerCase() !== 'yes')
+    const allManualBills = todayBills.filter(row => row[6]?.toLowerCase() !== 'yes')
+    const manualBills = allManualBills.filter(row => !isAlreadyLogged(row, expenseRows, todayDate))
+    const alreadyPaidBills = allManualBills.filter(row => isAlreadyLogged(row, expenseRows, todayDate))
 
-    console.log(`[cron] Auto bills: ${autoBills.length}, manual bills: ${manualBills.length}`)
+    console.log(`[cron] Auto bills: ${autoBills.length}, manual bills: ${manualBills.length}, already paid: ${alreadyPaidBills.length}`)
 
     // Auto-log only automatic bills into the current month expenses sheet
     if (autoBills.length > 0) {
@@ -66,6 +80,14 @@ export async function GET(req: NextRequest) {
       message += '🤖 *Registrado automáticamente:*\n'
       autoBills.forEach(row => {
         message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})\n`
+      })
+      message += '\n'
+    }
+
+    if (alreadyPaidBills.length > 0) {
+      message += '✅ *Ya pagados hoy:*\n'
+      alreadyPaidBills.forEach(row => {
+        message += `• ${row[4]} — ${row[0]}: $${row[5]}\n`
       })
       message += '\n'
     }

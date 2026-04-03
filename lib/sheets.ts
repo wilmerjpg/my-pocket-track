@@ -99,3 +99,54 @@ export async function appendExpenses(month: string, rows: string[][]) {
 export async function appendExpense(month: string, row: string[]) {
   return appendExpenses(month, [row])
 }
+
+export async function deleteLastExpense(month: string): Promise<string[] | null> {
+  const sheets = getSheets()
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID!
+
+  const colA = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${month}!A:G`,
+  })
+  const values = colA.data.values || []
+
+  // Find last row with data (skip header)
+  let lastRow = -1
+  for (let i = values.length - 1; i > 0; i--) {
+    if (values[i][0]) { lastRow = i; break }
+  }
+  if (lastRow < 1) return null
+
+  const deletedRow = values[lastRow]
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: `${month}!A${lastRow + 1}:G${lastRow + 1}`,
+  })
+  return deletedRow
+}
+
+export async function updateLastExpenseAmount(month: string, newAmount: string): Promise<string[] | null> {
+  const sheets = getSheets()
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID!
+
+  const colA = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${month}!A:G`,
+  })
+  const values = colA.data.values || []
+
+  let lastRow = -1
+  for (let i = values.length - 1; i > 0; i--) {
+    if (values[i][0]) { lastRow = i; break }
+  }
+  if (lastRow < 1) return null
+
+  const originalRow = [...values[lastRow]]
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${month}!F${lastRow + 1}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[newAmount]] },
+  })
+  return originalRow
+}

@@ -1,6 +1,6 @@
 const TZ = 'America/Caracas'
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
@@ -19,4 +19,9 @@ export function getNow() {
   const monthName = MONTH_NAMES[month - 1]
 
   return { year, month, day, monthName }
+}
+
+export function getPreviousMonth(monthName: string): string {
+  const idx = MONTH_NAMES.indexOf(monthName)
+  return idx <= 0 ? MONTH_NAMES[11] : MONTH_NAMES[idx - 1]
 }

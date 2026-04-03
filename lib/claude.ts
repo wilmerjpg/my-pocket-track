@@ -35,14 +35,14 @@ export async function askClaude(
         content: `Eres un asistente financiero personal llamado My Pocket Track.
 Hoy es el día ${todayDay} de ${currentMonth}.
 
-Aquí están los datos de pagos esperados (el campo "month" indica a qué mes pertenece cada fila):
+Aquí están los datos financieros (el campo "month" indica a qué mes pertenece cada fila):
 
 ${JSON.stringify(allRows, null, 2)}
 
 El usuario pregunta: "${userMessage}"
 
 Contexto del sistema:
-- Owners válidos: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida
+- Owners válidos: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida, Juan
 - "Nosotros" significa gastos compartidos (Wilmer + Yanelly)
 - "Wilmer Padre" y "Wilmer padre" son el mismo owner (ignora mayúsculas al filtrar)
 - Categorías: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro, Hogar
@@ -55,6 +55,9 @@ Instrucciones:
 - Si preguntan por una persona, filtra por owner ignorando mayúsculas/minúsculas
 - Si preguntan por pagos próximos o pendientes del mes actual, muestra los que tienen day > ${todayDay} y month = "${currentMonth}", ordénalos por día ascendente
 - Si preguntan por un día o fecha específica (ej: "el 2 de abril"), filtra por el month y day correctos según lo pedido
+- Los datos pueden incluir múltiples meses; filtra por el campo "month" según lo que pida el usuario
+- Si el usuario pregunta por "mes pasado" o un mes específico, filtra los datos por ese month
+- Si preguntan por categorías, agrupa y suma por categoría
 - Todos los montos son en USD
 - Usa emojis para hacer la respuesta más amigable
 - Sé breve, máximo 3-4 líneas de respuesta`,
@@ -83,19 +86,26 @@ export async function parseExpenseMessage(userMessage: string): Promise<ParsedEx
         role: "user",
         content: `Extract expense details from this message: "${userMessage}"
 
-Valid owners: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida
+Valid owners: Nosotros, Lisbeth, Tete, Oriana, Veronica, Wilmer Padre, Brigida, Juan
 Valid categories: Servicio, Comida, Salud, Simba, Articulos Personales, Personal, Inversiones, Seguro, Hogar
 Valid payment methods: Card, BofA Yanelly, BofA Wilmer, Cash, Payoneer, Paypal, Banesco Panama, TDC Mercantil W
 
-Rules:
+Business-specific defaults (apply these first, user-provided values override):
+- "gimnasio" → Owner: Nosotros, Amount: 100, Category: Personal, Type: Fijo, Payment: Cash
+- "Más por Menos" / "Mas por Menos" / "Gama" (supermarkets) → Category: Comida
+- "Farmatodo" → Category: Salud by default; Category: Comida if food items are mentioned (e.g. "comida", "snacks", "bebidas")
+- "colegio" when owner is Oriana → Category: Servicio
+- "IBKR" / "Interactive Brokers" → Category: Inversiones, Payment: BofA Wilmer
+
+General rules:
 - Match owner case-insensitively to one of the valid owners (e.g. "tete" → "Tete")
 - Match category case-insensitively (e.g. "salud" → "Salud")
 - If the message contains the word "personal" (e.g. "gasto personal", "personal expense"), category MUST be "Personal" regardless of what the expense is about
-- If payment method not mentioned, default to "Cash"
+- If payment method not mentioned and no business rule applies, default to "Cash"
 - Amount must be a number (no currency symbol)
 - Description: short phrase describing the actual expense item, do NOT include category-indicator words like "personal", "gasto personal", etc. (e.g. "gasto personal en panadería" → description is "panadería")
-- If owner or amount is missing/unclear, return {"matched": false}
-- Type: if category is "Comida" → "Fijo", if category is "Personal" → "Extra", otherwise → "Extra"
+- If owner or amount is missing/unclear AND no business rule provides a default, return {"matched": false}
+- Type: "Comida" → "Fijo", "Servicio" → "Fijo", "Inversiones" → "Fijo", "Seguro" → "Fijo", otherwise → "Extra". Business-specific Type overrides this.
 
 Return JSON only:
 {"matched":true,"owner":"...","category":"...","type":"...","paymentMethod":"...","description":"...","amount":"..."}

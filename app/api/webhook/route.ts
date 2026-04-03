@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMonthData, getExpectedData, appendExpense, appendExpenses } from '@/lib/sheets'
-import { sendMessage } from '@/lib/whatsapp'
+import { getMonthData, getExpectedData, appendExpense, appendExpenses, deleteLastExpense, updateLastExpenseAmount } from '@/lib/sheets'
+import { sendMessage, downloadMedia } from '@/lib/whatsapp'
+import { transcribeAudio } from '@/lib/transcribe'
 import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
-import { getNow } from '@/lib/date'
+import { getNow, getPreviousMonth } from '@/lib/date'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
 
@@ -21,6 +22,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): 
 const confirmationKeywords = ['pagué', 'pague', 'ya pagué', 'ya pague', 'paid', 'i paid', 'cancelé', 'cancele', 'confirmo']
 const expectedKeywords = ['expected', 'upcoming', 'incoming', 'bills', 'payments', 'pagos', 'próximos', 'proximos', 'pendientes', 'pendiente', 'debo pagar', 'toca pagar', 'se paga', 'hay que pagar', 'queda del mes', 'resto del mes', 'falta pagar', 'falta por pagar', 'por pagar', 'mañana', 'tomorrow']
 const registerKeywords = ['registra', 'registro', 'anota', 'agrega', 'añade', 'añadir', 'agregar', 'register', 'add expense', 'log expense', 'gasto de', 'gastos de']
+const deleteKeywords = ['elimina', 'borra', 'delete', 'undo', 'deshacer', 'eliminar último', 'borrar último', 'eliminar ultimo', 'borrar ultimo']
+const correctKeywords = ['corrige', 'corrección', 'correccion', 'correct', 'fix amount', 'cambia el monto', 'cambiar monto']
 
 // Maps Spanish and English month keywords to canonical English month names
 const MONTH_KEYWORD_MAP: Record<string, string> = {
@@ -38,11 +41,16 @@ const MONTH_KEYWORD_MAP: Record<string, string> = {
   'diciembre': 'December', 'december': 'December',
 }
 
+const RELATIVE_MONTH_KEYWORDS = ['mes pasado', 'last month', 'mes anterior', 'previous month']
+
 function detectMonths(text: string, currentMonth: string): string[] {
   const lower = text.toLowerCase()
   const found = new Set<string>([currentMonth])
   for (const [keyword, monthName] of Object.entries(MONTH_KEYWORD_MAP)) {
     if (lower.includes(keyword)) found.add(monthName)
+  }
+  if (RELATIVE_MONTH_KEYWORDS.some(kw => lower.includes(kw))) {
+    found.add(getPreviousMonth(currentMonth))
   }
   return Array.from(found)
 }
@@ -67,12 +75,27 @@ export async function POST(req: NextRequest) {
     const change = entry?.changes?.[0]
     const message = change?.value?.messages?.[0]
 
-    if (!message || message.type !== 'text') {
+    if (!message || (message.type !== 'text' && message.type !== 'audio')) {
       return NextResponse.json({ status: 'ok' })
     }
 
     const from: string = message.from
-    const text: string = message.text.body
+    let text: string
+
+    if (message.type === 'audio') {
+      try {
+        const audioBuffer = await downloadMedia(message.audio.id)
+        text = await transcribeAudio(audioBuffer)
+        await sendMessage(from, `🎙️ _Transcripción: "${text}"_`)
+      } catch (err) {
+        console.error('Audio transcription failed:', err)
+        await sendMessage(from, '❌ No pude procesar la nota de voz. Intenta enviarlo como texto.')
+        return NextResponse.json({ status: 'ok' })
+      }
+    } else {
+      text = message.text.body
+    }
+
     const lowerText = text.toLowerCase()
     const { year, month, day: today, monthName: currentMonth } = getNow()
     const todayDate = `${year}/${month}/${today}`
@@ -105,6 +128,52 @@ export async function POST(req: NextRequest) {
           )
         } catch {
           await sendMessage(from, '❌ *Error al registrar el gasto.* No se pudo guardar en Google Sheets después de 3 intentos. Intenta de nuevo en unos minutos.')
+        }
+      }
+      return NextResponse.json({ status: 'ok' })
+    }
+
+    // Branch 0.5 — Delete or correct last expense
+    if (deleteKeywords.some(k => lowerText.includes(k))) {
+      try {
+        const deleted = await deleteLastExpense(currentMonth)
+        if (deleted) {
+          await sendMessage(from,
+            `🗑️ *Último gasto eliminado:*\n\n` +
+            `• *Owner:* ${deleted[0]}\n` +
+            `• *Categoría:* ${deleted[1]}\n` +
+            `• *Descripción:* ${deleted[4]}\n` +
+            `• *Monto:* $${deleted[5]}\n` +
+            `• *Fecha:* ${deleted[6]}`
+          )
+        } else {
+          await sendMessage(from, '❌ No hay gastos registrados este mes para eliminar.')
+        }
+      } catch {
+        await sendMessage(from, '❌ Error al eliminar el gasto. Intenta de nuevo.')
+      }
+      return NextResponse.json({ status: 'ok' })
+    }
+
+    if (correctKeywords.some(k => lowerText.includes(k))) {
+      const amountMatch = lowerText.match(/\$?\s*(\d+(?:\.\d+)?)/)
+      if (!amountMatch) {
+        await sendMessage(from, '❌ No pude identificar el nuevo monto. Ejemplo: _Corrige el monto a $50_')
+      } else {
+        try {
+          const original = await updateLastExpenseAmount(currentMonth, amountMatch[1])
+          if (original) {
+            await sendMessage(from,
+              `✏️ *Monto corregido:*\n\n` +
+              `• *Descripción:* ${original[4]}\n` +
+              `• *Monto anterior:* $${original[5]}\n` +
+              `• *Nuevo monto:* $${amountMatch[1]}`
+            )
+          } else {
+            await sendMessage(from, '❌ No hay gastos registrados este mes para corregir.')
+          }
+        } catch {
+          await sendMessage(from, '❌ Error al corregir el monto. Intenta de nuevo.')
         }
       }
       return NextResponse.json({ status: 'ok' })
@@ -173,9 +242,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'ok' })
     }
 
-    // Branch 3 — General expenses query (fallback)
-    const sheetData = await getMonthData(currentMonth)
-    const reply = await askClaude(text, [{ month: currentMonth, data: sheetData }])
+    // Branch 3 — General expenses query (fallback, multi-month)
+    const months = detectMonths(lowerText, currentMonth)
+    const monthsData = await Promise.all(
+      months.map(async month => ({ month, data: await getMonthData(month) }))
+    )
+    const reply = await askClaude(text, monthsData)
     await sendMessage(from, reply)
 
     return NextResponse.json({ status: 'ok' })
