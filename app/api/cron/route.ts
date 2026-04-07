@@ -5,11 +5,10 @@ import { getNow } from '@/lib/date'
 
 const MY_WHATSAPP_NUMBER = process.env.MY_WHATSAPP_NUMBER!
 
-function isAlreadyLogged(bill: string[], expenseRows: string[][], todayDate: string): boolean {
+function isAlreadyLogged(bill: string[], expenseRows: string[][]): boolean {
   return expenseRows.some(expense =>
     expense[0]?.toLowerCase() === bill[0]?.toLowerCase() &&
-    expense[4]?.toLowerCase() === bill[4]?.toLowerCase() &&
-    expense[6] === todayDate
+    expense[4]?.toLowerCase() === bill[4]?.toLowerCase()
   )
 }
 
@@ -49,8 +48,8 @@ export async function GET(req: NextRequest) {
     // Split today's bills into auto and manual
     const autoBills = todayBills.filter(row => row[6]?.toLowerCase() === 'yes')
     const allManualBills = todayBills.filter(row => row[6]?.toLowerCase() !== 'yes')
-    const manualBills = allManualBills.filter(row => !isAlreadyLogged(row, expenseRows, todayDate))
-    const alreadyPaidBills = allManualBills.filter(row => isAlreadyLogged(row, expenseRows, todayDate))
+    const manualBills = allManualBills.filter(row => !isAlreadyLogged(row, expenseRows))
+    const alreadyPaidBills = allManualBills.filter(row => isAlreadyLogged(row, expenseRows))
 
     console.log(`[cron] Auto bills: ${autoBills.length}, manual bills: ${manualBills.length}, already paid: ${alreadyPaidBills.length}`)
 
