@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getExpectedData, getMonthData, appendExpenses } from '@/lib/sheets'
+import { getExpectedData, getMonthData, appendExpenses, ensureMonthSheet } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { getNow } from '@/lib/date'
 
@@ -24,6 +24,8 @@ export async function GET(req: NextRequest) {
     const tomorrow = today + 1
 
     console.log(`[cron] Running for ${currentMonth} ${today}, date=${todayDate}`)
+
+    await ensureMonthSheet(currentMonth)
 
     const [rows, expenseRows] = await Promise.all([
       getExpectedData(currentMonth),

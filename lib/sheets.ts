@@ -27,7 +27,7 @@ export async function getExpectedData(month: string) {
   return res.data.values || []
 }
 
-async function ensureMonthSheet(month: string) {
+export async function ensureMonthSheet(month: string) {
   const sheets = getSheets()
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!
 
