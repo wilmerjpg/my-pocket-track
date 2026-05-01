@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getMonthData, getExpectedData, appendExpense, appendExpenses, deleteLastExpense, updateLastExpenseAmount } from '@/lib/sheets'
 import { sendMessage, downloadMedia } from '@/lib/whatsapp'
 import { transcribeAudio } from '@/lib/transcribe'
@@ -68,22 +68,45 @@ export async function GET(req: NextRequest) {
   return new NextResponse('Forbidden', { status: 403 })
 }
 
+// In-memory dedup cache. WhatsApp retries the webhook if we don't 200 fast enough,
+// so the same message.id can arrive multiple times on the same warm instance.
+const processedMessageIds = new Set<string>()
+const MAX_PROCESSED_IDS = 1000
+
+function markProcessed(id: string) {
+  processedMessageIds.add(id)
+  if (processedMessageIds.size > MAX_PROCESSED_IDS) {
+    const first = processedMessageIds.values().next().value
+    if (first) processedMessageIds.delete(first)
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
 
+  if (!message?.id) return NextResponse.json({ status: 'ok' })
+
+  if (processedMessageIds.has(message.id)) {
+    console.log(`[webhook] Skipping duplicate message ${message.id}`)
+    return NextResponse.json({ status: 'duplicate' })
+  }
+  markProcessed(message.id)
+
+  // Respond 200 immediately so WhatsApp doesn't retry; do the heavy work after.
+  after(processIncomingMessage(message))
+
+  return NextResponse.json({ status: 'ok' })
+}
+
+async function processIncomingMessage(message: { id: string; from: string; type: string; text?: { body: string }; audio?: { id: string } }) {
   try {
-    const entry = body.entry?.[0]
-    const change = entry?.changes?.[0]
-    const message = change?.value?.messages?.[0]
-
-    if (!message || (message.type !== 'text' && message.type !== 'audio')) {
-      return NextResponse.json({ status: 'ok' })
-    }
+    if (message.type !== 'text' && message.type !== 'audio') return
 
     const from: string = message.from
     let text: string
 
-    if (message.type === 'audio') {
+    if (message.type === 'audio' && message.audio) {
       try {
         const audioBuffer = await downloadMedia(message.audio.id)
         text = await transcribeAudio(audioBuffer)
@@ -91,10 +114,12 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error('Audio transcription failed:', err)
         await sendMessage(from, '❌ No pude procesar la nota de voz. Intenta enviarlo como texto.')
-        return NextResponse.json({ status: 'ok' })
+        return
       }
-    } else {
+    } else if (message.text) {
       text = message.text.body
+    } else {
+      return
     }
 
     const lowerText = text.toLowerCase()
@@ -148,7 +173,7 @@ export async function POST(req: NextRequest) {
         await sendMessage(from, `No pude identificar el pago. Intenta con el nombre exacto.${hint}`)
       }
 
-      return NextResponse.json({ status: 'ok' })
+      return
     }
 
     // Branch 0 — Register new ad-hoc expense
@@ -181,7 +206,7 @@ export async function POST(req: NextRequest) {
           await sendMessage(from, '❌ *Error al registrar el gasto.* No se pudo guardar en Google Sheets después de 3 intentos. Intenta de nuevo en unos minutos.')
         }
       }
-      return NextResponse.json({ status: 'ok' })
+      return
     }
 
     // Branch 0.5 — Delete or correct last expense
@@ -203,7 +228,7 @@ export async function POST(req: NextRequest) {
       } catch {
         await sendMessage(from, '❌ Error al eliminar el gasto. Intenta de nuevo.')
       }
-      return NextResponse.json({ status: 'ok' })
+      return
     }
 
     if (correctKeywords.some(k => lowerText.includes(k))) {
@@ -227,7 +252,7 @@ export async function POST(req: NextRequest) {
           await sendMessage(from, '❌ Error al corregir el monto. Intenta de nuevo.')
         }
       }
-      return NextResponse.json({ status: 'ok' })
+      return
     }
 
     // Branch 2 — Expected payments query
@@ -238,7 +263,7 @@ export async function POST(req: NextRequest) {
       )
       const reply = await askClaude(text, monthsData)
       await sendMessage(from, reply)
-      return NextResponse.json({ status: 'ok' })
+      return
     }
 
     // Branch 3 — General expenses query (fallback, multi-month)
@@ -248,10 +273,12 @@ export async function POST(req: NextRequest) {
     )
     const reply = await askClaude(text, monthsData)
     await sendMessage(from, reply)
-
-    return NextResponse.json({ status: 'ok' })
   } catch (error) {
-    console.error('Webhook error:', error)
-    return NextResponse.json({ status: 'error' }, { status: 500 })
+    console.error('Webhook processing error:', error)
+    try {
+      await sendMessage(message.from, '❌ Error procesando el mensaje. Revisa los logs.')
+    } catch {
+      // ignore — notification failure is best-effort
+    }
   }
 }
