@@ -178,11 +178,11 @@ async function processIncomingMessage(message: { id: string; from: string; type:
 
     // Branch 0 — Register new ad-hoc expense
     if (registerKeywords.some(k => lowerText.includes(k))) {
-      const expense = await parseExpenseMessage(text)
-      if (!expense) {
-        await sendMessage(from, '❌ No pude entender el gasto. Asegúrate de incluir el owner y el monto.\n\nEjemplo: _Registra $50 de comida para Tete, pizza_')
-      } else {
-        try {
+      try {
+        const expense = await parseExpenseMessage(text)
+        if (!expense) {
+          await sendMessage(from, '❌ No pude entender el gasto. Asegúrate de incluir el owner y el monto.\n\nEjemplo: _Registra $50 de comida para Tete, pizza_')
+        } else {
           await withRetry(() => appendExpense(currentMonth, [
             expense.owner,
             expense.category,
@@ -202,9 +202,11 @@ async function processIncomingMessage(message: { id: string; from: string; type:
             `• *Método de pago:* ${expense.paymentMethod}\n` +
             `• *Fecha:* ${today}/${month}/${year}`
           )
-        } catch {
-          await sendMessage(from, '❌ *Error al registrar el gasto.* No se pudo guardar en Google Sheets después de 3 intentos. Intenta de nuevo en unos minutos.')
         }
+      } catch (err) {
+        console.error('Register expense failed:', err)
+        const detail = err instanceof Error ? err.message : String(err)
+        await sendMessage(from, `❌ *Error al registrar el gasto.*\n\n\`${detail}\``)
       }
       return
     }
@@ -275,8 +277,9 @@ async function processIncomingMessage(message: { id: string; from: string; type:
     await sendMessage(from, reply)
   } catch (error) {
     console.error('Webhook processing error:', error)
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     try {
-      await sendMessage(message.from, '❌ Error procesando el mensaje. Revisa los logs.')
+      await sendMessage(message.from, `❌ Error procesando el mensaje.\n\n\`${detail}\``)
     } catch {
       // ignore — notification failure is best-effort
     }
