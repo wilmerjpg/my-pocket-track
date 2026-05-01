@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getExpectedData, getMonthData, appendExpenses, ensureMonthSheet } from '@/lib/sheets'
 import { sendMessage } from '@/lib/whatsapp'
 import { getNow } from '@/lib/date'
+import { formatAmount } from '@/lib/format'
 
 const MY_WHATSAPP_NUMBER = process.env.MY_WHATSAPP_NUMBER!
 
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
     if (autoBills.length > 0) {
       message += '🤖 *Registrado automáticamente:*\n'
       autoBills.forEach(row => {
-        message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})\n`
+        message += `• ${row[4]} — ${row[0]}: ${formatAmount(row[5])} (${row[3]})\n`
       })
       message += '\n'
     }
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
     if (alreadyPaidBills.length > 0) {
       message += '✅ *Ya pagados hoy:*\n'
       alreadyPaidBills.forEach(row => {
-        message += `• ${row[4]} — ${row[0]}: $${row[5]}\n`
+        message += `• ${row[4]} — ${row[0]}: ${formatAmount(row[5])}\n`
       })
       message += '\n'
     }
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
     if (manualBills.length > 0) {
       message += '⏳ *Pendiente de confirmación:*\n'
       manualBills.forEach(row => {
-        message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})\n`
+        message += `• ${row[4]} — ${row[0]}: ${formatAmount(row[5])} (${row[3]})\n`
       })
       message += '\nResponde *"Pagué [nombre]"* para registrar cada pago.\n\n'
     }
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       message += '⏰ *Mañana toca pagar:*\n'
       tomorrowBills.forEach(row => {
         const auto = row[6]?.toLowerCase() === 'yes' ? ' 🤖' : ''
-        message += `• ${row[4]} — ${row[0]}: $${row[5]} (${row[3]})${auto}\n`
+        message += `• ${row[4]} — ${row[0]}: ${formatAmount(row[5])} (${row[3]})${auto}\n`
       })
     }
 

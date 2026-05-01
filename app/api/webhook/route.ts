@@ -4,6 +4,7 @@ import { sendMessage, downloadMedia } from '@/lib/whatsapp'
 import { transcribeAudio } from '@/lib/transcribe'
 import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
 import { getNow, getPreviousMonth } from '@/lib/date'
+import { formatAmount } from '@/lib/format'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
 
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
             `• *Owner:* ${expense.owner}\n` +
             `• *Categoría:* ${expense.category}\n` +
             `• *Descripción:* ${expense.description}\n` +
-            `• *Monto:* $${expense.amount}\n` +
+            `• *Monto:* ${formatAmount(expense.amount)}\n` +
             `• *Tipo:* ${expense.type}\n` +
             `• *Método de pago:* ${expense.paymentMethod}\n` +
             `• *Fecha:* ${today}/${month}/${year}`
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest) {
             `• *Owner:* ${deleted[0]}\n` +
             `• *Categoría:* ${deleted[1]}\n` +
             `• *Descripción:* ${deleted[4]}\n` +
-            `• *Monto:* $${deleted[5]}\n` +
+            `• *Monto:* ${formatAmount(deleted[5])}\n` +
             `• *Fecha:* ${deleted[6]}`
           )
         } else {
@@ -166,8 +167,8 @@ export async function POST(req: NextRequest) {
             await sendMessage(from,
               `✏️ *Monto corregido:*\n\n` +
               `• *Descripción:* ${original[4]}\n` +
-              `• *Monto anterior:* $${original[5]}\n` +
-              `• *Nuevo monto:* $${amountMatch[1]}`
+              `• *Monto anterior:* ${formatAmount(original[5])}\n` +
+              `• *Nuevo monto:* ${formatAmount(amountMatch[1])}`
             )
           } else {
             await sendMessage(from, '❌ No hay gastos registrados este mes para corregir.')
@@ -197,7 +198,7 @@ export async function POST(req: NextRequest) {
           await appendExpenses(currentMonth, todayManual.map(row =>
             [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
           ))
-          const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: $${r[5]}`).join('\n')
+          const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
           await sendMessage(from, `✅ *${todayManual.length} pagos registrados!*\n${list}`)
         }
       } else if (result.matched === 'items') {
@@ -212,10 +213,10 @@ export async function POST(req: NextRequest) {
         await appendExpenses(currentMonth, loggedRows.map(row =>
           [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
         ))
-        const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: $${r[5]}`).join('\n')
+        const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
         await sendMessage(from, `✅ *${loggedRows.length} pago(s) registrado(s)!*\n${list}`)
       } else if (result.matched === 'ambiguous') {
-        const optionsList = result.options.map(o => `• ${o.description} — ${o.owner}: $${o.amount}`).join('\n')
+        const optionsList = result.options.map(o => `• ${o.description} — ${o.owner}: ${formatAmount(o.amount)}`).join('\n')
         await sendMessage(from, `¿"${result.options[0].description}" de quién?\n\n${optionsList}\n\nResponde con el nombre del owner para confirmar.`)
       } else {
         // No match — list today's pending manual bills as hints
