@@ -101,6 +101,56 @@ export async function POST(req: NextRequest) {
     const { year, month, day: today, monthName: currentMonth } = getNow()
     const todayDate = `${year}/${month}/${today}`
 
+    // Branch 1 — Payment confirmation (checked before register so phrases like
+    // "ya pagué todos los gastos de hoy" aren't misrouted by "gastos de").
+    if (confirmationKeywords.some(k => lowerText.includes(k))) {
+      const expectedRows = await getExpectedData(currentMonth)
+      const nonAutoBills = expectedRows.filter((row, i) => i === 0 || (row[0] && row[6]?.toLowerCase() !== 'yes'))
+
+      const result = await parsePaymentConfirmation(text, nonAutoBills)
+
+      if (result.matched === 'all') {
+        const todayManual = expectedRows.slice(1).filter(
+          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
+        )
+        if (todayManual.length === 0) {
+          await sendMessage(from, 'No tienes pagos manuales pendientes para hoy.')
+        } else {
+          await appendExpenses(currentMonth, todayManual.map(row =>
+            [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
+          ))
+          const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
+          await sendMessage(from, `✅ *${todayManual.length} pagos registrados!*\n${list}`)
+        }
+      } else if (result.matched === 'items') {
+        const loggedRows = result.items.map(item =>
+          expectedRows.slice(1).find(
+            row => row[4]?.toLowerCase() === item.description.toLowerCase() &&
+                   row[0]?.toLowerCase() === item.owner.toLowerCase()
+          )
+        ).filter(Boolean) as string[][]
+
+        await appendExpenses(currentMonth, loggedRows.map(row =>
+          [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
+        ))
+        const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
+        await sendMessage(from, `✅ *${loggedRows.length} pago(s) registrado(s)!*\n${list}`)
+      } else if (result.matched === 'ambiguous') {
+        const optionsList = result.options.map(o => `• ${o.description} — ${o.owner}: ${formatAmount(o.amount)}`).join('\n')
+        await sendMessage(from, `¿"${result.options[0].description}" de quién?\n\n${optionsList}\n\nResponde con el nombre del owner para confirmar.`)
+      } else {
+        const todayManual = expectedRows.slice(1).filter(
+          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
+        )
+        const hint = todayManual.length > 0
+          ? '\n\nPendientes de hoy:\n' + todayManual.map(r => `• ${r[4]} — ${r[0]}`).join('\n')
+          : ''
+        await sendMessage(from, `No pude identificar el pago. Intenta con el nombre exacto.${hint}`)
+      }
+
+      return NextResponse.json({ status: 'ok' })
+    }
+
     // Branch 0 — Register new ad-hoc expense
     if (registerKeywords.some(k => lowerText.includes(k))) {
       const expense = await parseExpenseMessage(text)
@@ -177,58 +227,6 @@ export async function POST(req: NextRequest) {
           await sendMessage(from, '❌ Error al corregir el monto. Intenta de nuevo.')
         }
       }
-      return NextResponse.json({ status: 'ok' })
-    }
-
-    // Branch 1 — Payment confirmation
-    if (confirmationKeywords.some(k => lowerText.includes(k))) {
-      const expectedRows = await getExpectedData(currentMonth)
-      const nonAutoBills = expectedRows.filter((row, i) => i === 0 || (row[0] && row[6]?.toLowerCase() !== 'yes'))
-
-      const result = await parsePaymentConfirmation(text, nonAutoBills)
-
-      if (result.matched === 'all') {
-        // Log all today's non-auto bills
-        const todayManual = expectedRows.slice(1).filter(
-          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
-        )
-        if (todayManual.length === 0) {
-          await sendMessage(from, 'No tienes pagos manuales pendientes para hoy.')
-        } else {
-          await appendExpenses(currentMonth, todayManual.map(row =>
-            [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
-          ))
-          const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
-          await sendMessage(from, `✅ *${todayManual.length} pagos registrados!*\n${list}`)
-        }
-      } else if (result.matched === 'items') {
-        // Log each matched bill
-        const loggedRows = result.items.map(item =>
-          expectedRows.slice(1).find(
-            row => row[4]?.toLowerCase() === item.description.toLowerCase() &&
-                   row[0]?.toLowerCase() === item.owner.toLowerCase()
-          )
-        ).filter(Boolean) as string[][]
-
-        await appendExpenses(currentMonth, loggedRows.map(row =>
-          [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
-        ))
-        const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
-        await sendMessage(from, `✅ *${loggedRows.length} pago(s) registrado(s)!*\n${list}`)
-      } else if (result.matched === 'ambiguous') {
-        const optionsList = result.options.map(o => `• ${o.description} — ${o.owner}: ${formatAmount(o.amount)}`).join('\n')
-        await sendMessage(from, `¿"${result.options[0].description}" de quién?\n\n${optionsList}\n\nResponde con el nombre del owner para confirmar.`)
-      } else {
-        // No match — list today's pending manual bills as hints
-        const todayManual = expectedRows.slice(1).filter(
-          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
-        )
-        const hint = todayManual.length > 0
-          ? '\n\nPendientes de hoy:\n' + todayManual.map(r => `• ${r[4]} — ${r[0]}`).join('\n')
-          : ''
-        await sendMessage(from, `No pude identificar el pago. Intenta con el nombre exacto.${hint}`)
-      }
-
       return NextResponse.json({ status: 'ok' })
     }
 
