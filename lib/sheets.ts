@@ -18,13 +18,40 @@ export async function getMonthData(month: string) {
   return res.data.values || []
 }
 
-export async function getExpectedData(month: string) {
+/** Pestaña del spreadsheet de pagos esperados que contiene la lista canónica. */
+const EXPECTED_TAB = 'Pagos'
+
+/**
+ * Filas crudas de la hoja de pagos esperados, encabezados incluidos.
+ * Interpretarlas es responsabilidad de `lib/expected.ts`.
+ */
+export async function getExpectedRows() {
   const sheets = getSheets()
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.GOOGLE_EXPECTED_SHEET_ID!,
-    range: `${month}!A:H`,
+    range: `${EXPECTED_TAB}!A:N`,
   })
   return res.data.values || []
+}
+
+/**
+ * Vista plana de los gastos de un mes para pasárselos a Claude.
+ * Centraliza el orden de columnas de la hoja de gastos (A:G).
+ */
+export function toExpenseRecords(month: string, rows: string[][]) {
+  return rows
+    .slice(1)
+    .filter(row => row[0] && row[1])
+    .map(row => ({
+      month,
+      owner: row[0],
+      category: row[1],
+      type: row[2],
+      paymentMethod: row[3],
+      description: row[4],
+      amount: row[5],
+      date: row[6],
+    }))
 }
 
 export async function ensureMonthSheet(month: string) {

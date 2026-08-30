@@ -1,28 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getNow } from "@/lib/date";
+import type { ExpectedBill } from "@/lib/expected";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+/**
+ * Responde una pregunta del usuario sobre sus finanzas.
+ *
+ * Recibe los registros ya interpretados — el orden de columnas de cada hoja se
+ * resuelve en `lib/sheets.ts` y `lib/expected.ts`, no aquí.
+ */
 export async function askClaude(
   userMessage: string,
-  monthsData: { month: string; data: string[][] }[]
+  records: Record<string, unknown>[]
 ) {
-  const allRows = monthsData.flatMap(({ month, data }) =>
-    data
-      .slice(1)
-      .filter((row) => row[0] && row[1])
-      .map((row) => ({
-        month,
-        owner: row[0],
-        category: row[1],
-        type: row[2],
-        paymentMethod: row[3],
-        description: row[4],
-        amount: row[5],
-        auto: row[6],
-        day: row[7],
-      }))
-  );
+  const allRows = records;
 
   const { day: todayDay, monthName: currentMonth } = getNow();
 
@@ -122,9 +114,9 @@ or {"matched":false}`,
 }
 
 type ConfirmationResult =
-  | { matched: "items"; items: { description: string; owner: string }[] }
+  | { matched: "items"; ids: string[] }
   | { matched: "all" }
-  | { matched: "ambiguous"; options: { description: string; owner: string; amount: string }[] }
+  | { matched: "ambiguous"; ids: string[] }
   | { matched: false }
 
 function extractJson(text: string): unknown {
@@ -137,24 +129,21 @@ function extractJson(text: string): unknown {
   }
 }
 
+/**
+ * Empareja el mensaje del usuario ("ya pagué el colegio") con los pagos pendientes.
+ *
+ * Devuelve IDs y no owner+descripción porque ese par no es único: P013 y P040
+ * son ambos "Wilmer Padre / Comida" y solo se distinguen por monto y día.
+ */
 export async function parsePaymentConfirmation(
   userMessage: string,
-  pendingBills: string[][]
+  pendingBills: ExpectedBill[]
 ): Promise<ConfirmationResult> {
-  const bills = pendingBills
-    .slice(1)
-    .filter((row) => row[0] && row[1])
-    .map((row) => ({
-      description: row[4],
-      owner: row[0],
-      amount: row[5],
-    }))
+  if (pendingBills.length === 0) return { matched: false };
 
-  if (bills.length === 0) return { matched: false }
-
-  const billList = bills
-    .map((b, i) => `${i + 1}. "${b.description}" — ${b.owner} ($${b.amount})`)
-    .join("\n")
+  const billList = pendingBills
+    .map((b) => `${b.id}: "${b.description}" — ${b.owner} (${b.amount}, día ${b.dayOfMonth})`)
+    .join("\n");
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5",
@@ -164,19 +153,19 @@ export async function parsePaymentConfirmation(
         role: "user",
         content: `The user confirmed a payment with this message: "${userMessage}"
 
-Pending bills:
+Pending bills (each line starts with its ID):
 ${billList}
 
-Match the user's message to bills above. Rules:
+Match the user's message to bills above. Always refer to bills by their ID. Rules:
 - If the user wants to pay ALL pending bills (e.g. "paid everything", "pagué todo", "all payments") → return: {"matched":"all"}
-- If the user mentions one or more specific bills that all match unambiguously → return: {"matched":"items","items":[{"description":"...","owner":"..."},{"description":"...","owner":"..."}]}
-- If a description matches multiple owners and the user didn't specify which → return: {"matched":"ambiguous","options":[{"description":"...","owner":"...","amount":"..."},...]}
+- If the user mentions one or more specific bills that all match unambiguously → return: {"matched":"items","ids":["P001","P002"]}
+- If the user's wording matches several bills and they didn't say which (same description for different owners, or the same owner and description with different amounts) → return: {"matched":"ambiguous","ids":["P013","P040"]}
 - If no match or unclear → return: {"matched":false}
 
 Respond with JSON only, no other text.`,
       },
     ],
-  })
+  });
 
   const text = response.content[0].type === "text" ? response.content[0].text : ""
   const parsed = extractJson(text) as ConfirmationResult | null

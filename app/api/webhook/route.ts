@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse, after } from 'next/server'
-import { getMonthData, getExpectedData, appendExpense, appendExpenses, deleteLastExpense, updateLastExpenseAmount } from '@/lib/sheets'
+import { getMonthData, toExpenseRecords, appendExpense, appendExpenses, deleteLastExpense, updateLastExpenseAmount } from '@/lib/sheets'
+import { loadExpected, billsForMonth, dueDayIn, toExpenseRow, toClaudeRecord } from '@/lib/expected'
 import { sendMessage, downloadMedia } from '@/lib/whatsapp'
 import { transcribeAudio } from '@/lib/transcribe'
 import { askClaude, parsePaymentConfirmation, parseExpenseMessage } from '@/lib/claude'
-import { getNow, getPreviousMonth } from '@/lib/date'
+import { getNow, getPreviousMonth, getMonthNumber } from '@/lib/date'
 import { formatAmount } from '@/lib/format'
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN
@@ -129,46 +130,42 @@ async function processIncomingMessage(message: { id: string; from: string; type:
     // Branch 1 — Payment confirmation (checked before register so phrases like
     // "ya pagué todos los gastos de hoy" aren't misrouted by "gastos de").
     if (confirmationKeywords.some(k => lowerText.includes(k))) {
-      const expectedRows = await getExpectedData(currentMonth)
-      const nonAutoBills = expectedRows.filter((row, i) => i === 0 || (row[0] && row[6]?.toLowerCase() !== 'yes'))
+      const { bills } = await loadExpected()
+      const manualBills = billsForMonth(bills, year, month).filter(bill => !bill.isAuto)
+      const byId = new Map(manualBills.map(bill => [bill.id, bill]))
+      const todayManual = manualBills.filter(bill => dueDayIn(bill, year, month) === today)
 
-      const result = await parsePaymentConfirmation(text, nonAutoBills)
+      const result = await parsePaymentConfirmation(text, manualBills)
+
+      const logBills = async (toLog: typeof manualBills) => {
+        await appendExpenses(currentMonth, toLog.map(bill => toExpenseRow(bill, todayDate)))
+        const list = toLog.map(b => `• ${b.description} — ${b.owner}: ${formatAmount(b.amount)}`).join('\n')
+        await sendMessage(from, `✅ *${toLog.length} pago(s) registrado(s)!*\n${list}`)
+      }
 
       if (result.matched === 'all') {
-        const todayManual = expectedRows.slice(1).filter(
-          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
-        )
         if (todayManual.length === 0) {
           await sendMessage(from, 'No tienes pagos manuales pendientes para hoy.')
         } else {
-          await appendExpenses(currentMonth, todayManual.map(row =>
-            [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
-          ))
-          const list = todayManual.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
-          await sendMessage(from, `✅ *${todayManual.length} pagos registrados!*\n${list}`)
+          await logBills(todayManual)
         }
       } else if (result.matched === 'items') {
-        const loggedRows = result.items.map(item =>
-          expectedRows.slice(1).find(
-            row => row[4]?.toLowerCase() === item.description.toLowerCase() &&
-                   row[0]?.toLowerCase() === item.owner.toLowerCase()
-          )
-        ).filter(Boolean) as string[][]
-
-        await appendExpenses(currentMonth, loggedRows.map(row =>
-          [row[0], row[1], row[2], row[3], row[4], row[5], todayDate]
-        ))
-        const list = loggedRows.map(r => `• ${r[4]} — ${r[0]}: ${formatAmount(r[5])}`).join('\n')
-        await sendMessage(from, `✅ *${loggedRows.length} pago(s) registrado(s)!*\n${list}`)
+        // Los IDs vienen de un modelo, así que se validan contra la hoja antes de escribir.
+        const toLog = result.ids.map(id => byId.get(id)).filter(Boolean) as typeof manualBills
+        if (toLog.length === 0) {
+          await sendMessage(from, 'No pude identificar el pago. Intenta con el nombre exacto.')
+        } else {
+          await logBills(toLog)
+        }
       } else if (result.matched === 'ambiguous') {
-        const optionsList = result.options.map(o => `• ${o.description} — ${o.owner}: ${formatAmount(o.amount)}`).join('\n')
-        await sendMessage(from, `¿"${result.options[0].description}" de quién?\n\n${optionsList}\n\nResponde con el nombre del owner para confirmar.`)
+        const options = result.ids.map(id => byId.get(id)).filter(Boolean) as typeof manualBills
+        const optionsList = options
+          .map(o => `• ${o.description} — ${o.owner}: ${formatAmount(o.amount)} (día ${dueDayIn(o, year, month)})`)
+          .join('\n')
+        await sendMessage(from, `¿Cuál de estos?\n\n${optionsList}\n\nResponde indicando el owner o el monto.`)
       } else {
-        const todayManual = expectedRows.slice(1).filter(
-          row => row[0] && row[6]?.toLowerCase() !== 'yes' && Number(row[7]) === today
-        )
         const hint = todayManual.length > 0
-          ? '\n\nPendientes de hoy:\n' + todayManual.map(r => `• ${r[4]} — ${r[0]}`).join('\n')
+          ? '\n\nPendientes de hoy:\n' + todayManual.map(b => `• ${b.description} — ${b.owner}`).join('\n')
           : ''
         await sendMessage(from, `No pude identificar el pago. Intenta con el nombre exacto.${hint}`)
       }
@@ -259,11 +256,12 @@ async function processIncomingMessage(message: { id: string; from: string; type:
 
     // Branch 2 — Expected payments query
     if (expectedKeywords.some(k => lowerText.includes(k))) {
-      const months = detectMonths(lowerText, currentMonth)
-      const monthsData = await Promise.all(
-        months.map(async month => ({ month, data: await getExpectedData(month) }))
-      )
-      const reply = await askClaude(text, monthsData)
+      const { bills } = await loadExpected()
+      const records = detectMonths(lowerText, currentMonth).flatMap(monthName => {
+        const monthNumber = getMonthNumber(monthName)
+        return billsForMonth(bills, year, monthNumber).map(bill => toClaudeRecord(bill, year, monthNumber))
+      })
+      const reply = await askClaude(text, records)
       await sendMessage(from, reply)
       return
     }
@@ -271,9 +269,9 @@ async function processIncomingMessage(message: { id: string; from: string; type:
     // Branch 3 — General expenses query (fallback, multi-month)
     const months = detectMonths(lowerText, currentMonth)
     const monthsData = await Promise.all(
-      months.map(async month => ({ month, data: await getMonthData(month) }))
+      months.map(async month => toExpenseRecords(month, await getMonthData(month)))
     )
-    const reply = await askClaude(text, monthsData)
+    const reply = await askClaude(text, monthsData.flat())
     await sendMessage(from, reply)
   } catch (error) {
     console.error('Webhook processing error:', error)
